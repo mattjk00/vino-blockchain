@@ -1,0 +1,9 @@
+[package]
+name = "vino-bc"
+version = "0.1.0"
+authors = ["Matthew K <mattjk@outlook.com>"]
+edition = "2018"
+
+[dependencies]
+sha2 = "0.9.3"
+chrono = "0.4.0"

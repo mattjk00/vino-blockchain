@@ -6,10 +6,11 @@ extern crate rand;
 extern crate ed25519_dalek;
 use rand::rngs::OsRng;
 use ed25519_dalek::{Keypair, Signer, Signature, PublicKey, Verifier};
+const REWARD:u32 = 5;
 
 /// Represents the blockchain structure
 pub struct Blockchain {
-    chain:Vec<Block>
+    pub chain:Vec<Block>
 }
 
 impl Blockchain {
@@ -27,7 +28,7 @@ impl Blockchain {
             // Blockchain has been started
             Some(v) => {
                 // Validate the new blockchain against the latest node
-                let block_okay = Blockchain::validate(&v, &b);
+                let block_okay = self.validate(&v, &b);
                 if block_okay {
                     // Add the new block if it checks out
                     self.chain.push(b);
@@ -50,17 +51,17 @@ impl Blockchain {
     }
 
     /// Gives a rough print of the blockchain
-    pub fn print_all(self) {
-        for b in self.chain {
+    pub fn print_all(&self) {
+        for b in self.chain.iter() {
             println!("{}, ", b.to_string());
         }
     }
 
     /// Calculates a SHA256 Hash for a given block
-    fn calc_hash(b:&Block) -> [u8; 32] {
+    pub fn calc_hash(b:&Block) -> [u8; 32] {
         let mut hasher = Sha256::new();
         // Create a record string from the block
-        let record = String::from(format!("{}{}{}", b.index, b.timestamp, s32(b.prevhash)));
+        let record = String::from(format!("{}{}{}{}", b.index, b.timestamp, s32(b.prevhash), b.nonce));
         hasher.update(record);
         // save the hash to u8 array
         let result:[u8; 32] = hasher.finalize().into();
@@ -69,8 +70,67 @@ impl Blockchain {
 
     /// Runs some validation checks given an old block and new block.
     /// Returns true if new block is valid.
-    fn validate(old_block:&Block, new_block:&Block) -> bool {
-        old_block.index + 1 == new_block.index && old_block.hash == new_block.prevhash && Blockchain::calc_hash(&new_block) == new_block.hash
+    fn validate(&self, old_block:&Block, new_block:&Block) -> bool {
+        let block_okay = old_block.index + 1 == new_block.index && old_block.hash == new_block.prevhash && Blockchain::calc_hash(&new_block) == new_block.hash && new_block.hash[0] == 0 && new_block.hash[1] == 0;
+        let mut transactions_okay = true;
+        
+        for t in new_block.transactions.iter() {
+            let public_key = PublicKey::from_bytes(&t.public_key);
+            match public_key {
+                Ok(pk) => { 
+                    let t_result = self.validate_transaction(&t,pk);
+                    if t_result == false {
+                        transactions_okay = false;
+                        break;
+                    }
+                },
+                Err(e) => {
+                    println!("BAD: {}", s32(t.public_key));
+                }
+            }    
+        }
+        block_okay && transactions_okay
+    }
+
+    fn validate_transaction(&self, t:&Transaction, pkey:PublicKey) -> bool {
+        let csig = Signature::new(t.signature);
+        let sig_result = pkey.verify(t.form_record().as_bytes(), &csig).is_ok();
+        let sender_value = self.determine_value(t.input);
+        sig_result && (sender_value >= t.value || t.input == self.genesis_hash())
+    }
+
+    pub fn determine_value(&self, address:[u8; 32]) -> u32 {
+        let mut sum:u32 = 0;
+        for b in self.chain.iter() {
+            for t in b.transactions.iter() {
+                if t.output == address {
+                    sum += t.value;
+                }
+                if t.input == address {
+                    if sum >= t.value {
+                        sum -= t.value;
+                    } else {
+                        return 0;
+                    }
+                    
+                }
+            }
+        }
+        sum
+    }
+
+    pub fn last_hash(&self) -> Option<[u8; 32]> {
+        match self.chain.len() > 0 {
+            true => Some(self.chain[self.chain.len() - 1].hash),
+            false => None
+        }
+    }
+
+    pub fn genesis_hash(&self) -> [u8; 32] {
+        match self.chain.len() > 0 {
+            true => self.chain[0].hash,
+            false => [0; 32]
+        }
     }
 }
 
@@ -98,8 +158,8 @@ pub struct Block {
     pub timestamp:  String,
     pub hash:       [u8; 32],
     prevhash:       [u8; 32],
-    nonce:          u32,
-    transactions:   Vec<Transaction>
+    pub nonce:          u32,
+    pub transactions:   Vec<Transaction>
 }
 
 impl Block {
@@ -125,6 +185,11 @@ impl Block {
     pub fn add_transaction(&mut self, t:Transaction) {
         self.transactions.push(t);
     }
+
+    /*fn validate_nth_transaction(self, i:usize, pkey:PublicKey) -> bool {
+        let t = &self.transactions[i];
+        self.validate_transaction(t, pkey)
+    }*/
 }
 
 /// Implement a to_string method for block. Used for printing info.
@@ -137,15 +202,20 @@ impl fmt::Display for Block {
 pub struct Transaction {
     pub signature:  [u8; 64],
     blockhash:      [u8; 32],
-    input:          String,
-    output:         String,
+    input:          [u8; 32],
+    output:         [u8; 32],
     value:          u32,
-    fee:            u32
+    fee:            u32,
+    public_key:     [u8; 32]
 }
 
 impl Transaction {
-    pub fn new(inp:String, out:String, val:u32, fee:u32) -> Transaction {
-        Transaction { signature:[0; 64], blockhash:[0; 32], input:inp, output:out, value:val, fee: fee }
+    pub fn new(inp:[u8; 32], out:[u8; 32], val:u32, fee:u32) -> Transaction {
+        Transaction { signature:[0; 64], blockhash:[0; 32], input:inp, output:out, value:val, fee: fee, public_key:inp }
+    }
+
+    pub fn new_reward(genesis_hash:[u8; 32], blockhash:[u8; 32], dest:[u8; 32]) -> Transaction {
+        Transaction { signature:[0; 64], blockhash:blockhash, input:genesis_hash, output:dest, value:REWARD, fee:0, public_key:dest }
     }
 
     pub fn sign(&mut self, kp:&Keypair) {
@@ -156,13 +226,14 @@ impl Transaction {
     }
 
     fn form_record(&self) -> String {
-        format!("{}{}{}{}", self.input, self.output, self.value, self.fee)
+        format!("{}{}{}{}", s32(self.input), s32(self.output), self.value, self.fee)
     }
+}
 
-    pub fn verify(self, pkey:PublicKey) -> bool {
-        let csig = Signature::new(self.signature);
-        let result = pkey.verify(self.form_record().as_bytes(), &csig).is_ok();
-        result
+/// Implement a to_string method for block. Used for printing info.
+impl fmt::Display for Transaction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[\tfrom:{}\n\tto:{}\n\tblockhash:{}\n\tsignature:{}\n]", s32(self.input), s32(self.output), s32(self.blockhash), s64(self.signature))
     }
 }
 

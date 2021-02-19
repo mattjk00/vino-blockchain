@@ -7,7 +7,7 @@ extern crate rand;
 extern crate ed25519_dalek;
 use rand::rngs::OsRng;
 use ed25519_dalek::{Keypair, Signer, Signature, PublicKey, Verifier};
-const REWARD:u32 = 5;
+const REWARD:f32 = 5.0;
 
 /// Represents the blockchain structure
 #[derive(Serialize, Deserialize, Debug)]
@@ -116,8 +116,8 @@ impl Blockchain {
     }
 
     /// Function to try and determine the value in coins of a single address
-    pub fn determine_value(&self, address:[u8; 32]) -> u32 {
-        let mut sum:u32 = 0;
+    pub fn determine_value(&self, address:[u8; 32]) -> f32 {
+        let mut sum:f32 = 0.0;
         for b in self.chain.iter() {
             for t in b.transactions.iter() {
                 // checking for when the address is a recipient
@@ -130,7 +130,7 @@ impl Blockchain {
                     if sum >= t.value {
                         sum -= t.value;
                     } else {
-                        return 0;
+                        return 0.0;
                     }
                     
                 }
@@ -249,20 +249,20 @@ pub struct Transaction {
     blockhash:      [u8; 32],
     input:          [u8; 32],
     output:         [u8; 32],
-    value:          u32,
-    fee:            u32,
+    value:          f32,
+    fee:            f32,
     public_key:     [u8; 32]
 }
 
 impl Transaction {
     /// Create an unsigned transaction with input, output, value, and fee attached
-    pub fn new(inp:[u8; 32], out:[u8; 32], val:u32, fee:u32) -> Transaction {
+    pub fn new(inp:[u8; 32], out:[u8; 32], val:f32, fee:f32) -> Transaction {
         Transaction { signature_first:[0; 32], signature_second:[0; 32], blockhash:[0; 32], input:inp, output:out, value:val, fee: fee, public_key:inp }
     }
 
     /// Creates a reward transaction. Used to reward miners on the blockchain. The input will be from the genesis hash.
     pub fn new_reward(genesis_hash:[u8; 32], blockhash:[u8; 32], dest:[u8; 32]) -> Transaction {
-        Transaction { signature_first:[0; 32], signature_second:[0; 32], blockhash:blockhash, input:genesis_hash, output:dest, value:REWARD, fee:0, public_key:dest }
+        Transaction { signature_first:[0; 32], signature_second:[0; 32], blockhash:blockhash, input:genesis_hash, output:dest, value:REWARD, fee:0.0, public_key:dest }
     }
 
     /// Signs the transaction with given keys

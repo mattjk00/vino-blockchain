@@ -113,7 +113,7 @@ impl Blockchain {
         let sig_result = pkey.verify(t.form_record().as_bytes(), &csig).is_ok();
         // determine probable value of sender's coins --- the will be ignored if coins are being sent by the genesis block
         let sender_value = self.determine_value(t.input);
-        sig_result && (sender_value >= t.value || t.input == self.genesis_hash().unwrap())
+        sig_result && (sender_value >= t.value || t.input == self.genesis_hash().unwrap()) && !self.transaction_exists(t.signature())
     }
 
     /// Function to try and determine the value in coins of a single address
@@ -165,6 +165,17 @@ impl Blockchain {
             }
         }
         proof
+    }
+
+    pub fn transaction_exists(&self, sig:[u8;64]) -> bool {
+        for b in self.chain.iter() {
+            for t in b.transactions.iter() {
+                if t.signature() == sig {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 

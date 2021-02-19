@@ -1,7 +1,8 @@
 use sha2::{Sha256, Digest};
 use std::fmt;
 use chrono::Utc;
-
+use serde::{Serialize, Deserialize};
+use bincode;
 extern crate rand;
 extern crate ed25519_dalek;
 use rand::rngs::OsRng;
@@ -103,7 +104,7 @@ impl Blockchain {
     /// Validates a single given transaction with given public key
     /// Checks for valid signature and if coins are sendable
     fn validate_transaction(&self, t:&Transaction, pkey:PublicKey) -> bool {
-        let csig = Signature::new(t.signature);
+        let csig = Signature::new(t.signature());
         // verify signature
         let sig_result = pkey.verify(t.form_record().as_bytes(), &csig).is_ok();
         // determine probable value of sender's coins --- the will be ignored if coins are being sent by the genesis block
@@ -171,6 +172,7 @@ pub fn s64(a:[u8; 64]) -> String {
 }
 
 /// Structure representing the data of each of Block on the chain
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Block {
     index:              u32,
     pub timestamp:      String,
@@ -212,8 +214,10 @@ impl fmt::Display for Block {
 }
 
 /// Represents a transaction on the blockchain.
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Transaction {
-    pub signature:  [u8; 64],
+    signature_first:  [u8; 32],
+    signature_second: [u8; 32],
     blockhash:      [u8; 32],
     input:          [u8; 32],
     output:         [u8; 32],
@@ -225,12 +229,12 @@ pub struct Transaction {
 impl Transaction {
     /// Create an unsigned transaction with input, output, value, and fee attached
     pub fn new(inp:[u8; 32], out:[u8; 32], val:u32, fee:u32) -> Transaction {
-        Transaction { signature:[0; 64], blockhash:[0; 32], input:inp, output:out, value:val, fee: fee, public_key:inp }
+        Transaction { signature_first:[0; 32], signature_second:[0; 32], blockhash:[0; 32], input:inp, output:out, value:val, fee: fee, public_key:inp }
     }
 
     /// Creates a reward transaction. Used to reward miners on the blockchain. The input will be from the genesis hash.
     pub fn new_reward(genesis_hash:[u8; 32], blockhash:[u8; 32], dest:[u8; 32]) -> Transaction {
-        Transaction { signature:[0; 64], blockhash:blockhash, input:genesis_hash, output:dest, value:REWARD, fee:0, public_key:dest }
+        Transaction { signature_first:[0; 32], signature_second:[0; 32], blockhash:blockhash, input:genesis_hash, output:dest, value:REWARD, fee:0, public_key:dest }
     }
 
     /// Signs the transaction with given keys
@@ -238,19 +242,33 @@ impl Transaction {
         let record_str = self.form_record();
         let record = record_str.as_bytes();
         let sig = kp.sign(record);
-        self.signature = sig.to_bytes();
+        //self.signature = sig.to_bytes();
+        let sigb = sig.to_bytes();
+        self.signature_first = get_arr(&sigb[..32]);
+        self.signature_second = get_arr(&sigb[32..]);
     }
 
     /// Returns the string record format of the transaction. What gets crypto'd
     fn form_record(&self) -> String {
         format!("{}{}{}{}", s32(self.input), s32(self.output), self.value, self.fee)
     }
+
+    fn signature(&self) -> [u8; 64] {
+        let mut sig = [0; 64];
+        for i in 0..self.signature_first.len() {
+            sig[i] = self.signature_first[i];
+        }
+        for i in 0..self.signature_second.len() {
+            sig[i + 32] = self.signature_second[i];
+        }
+        sig
+    }
 }
 
 /// Implement a to_string method for block. Used for printing info.
 impl fmt::Display for Transaction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[\tfrom:{}\n\tto:{}\n\tblockhash:{}\n\tsignature:{}\n]", s32(self.input), s32(self.output), s32(self.blockhash), s64(self.signature))
+        write!(f, "[\tfrom:{}\n\tto:{}\n\tblockhash:{}\n\tsignature:{}{}\n]", s32(self.input), s32(self.output), s32(self.blockhash), s32(self.signature_first), s32(self.signature_second))
     }
 }
 
@@ -259,4 +277,9 @@ pub fn gen_key() -> Keypair {
     let mut csprng = OsRng{};
     let keypair: Keypair = Keypair::generate(&mut csprng);
     keypair
+}
+
+use std::convert::TryInto;
+fn get_arr(a: &[u8]) -> [u8; 32] {
+    a.try_into().expect(&format!("Slice with incorrect length! - Length: {}", a.len()))
 }

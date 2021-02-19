@@ -151,13 +151,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                             println!("Enter amount:");
                         } else if cmd_params.len() == 2 {
                             println!("Attempting...");
+                            cmd_mode = "";
                         }
                     }
                     else {
                         if line == "bc" {
                             let a = &swarm.blockchain;
                             let msg = VinoMessage::new_blockchain_message(a);
-                            swarm.floodsub.publish(floodsub_topic.clone(), &msg.to_bytes()[..])
+                            swarm.floodsub.publish(floodsub_topic.clone(), &msg.to_bytes()[..]);
+                            println!("Broadcasting blockchain...");
                         } 
                         else if line == "t" {
                             cmd_mode = "t".to_string();
@@ -190,9 +192,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                             println!("Balance: {}", balance);
                         }
                         else {
-                            swarm.floodsub.publish(floodsub_topic.clone(), "Hi.".as_bytes())
+                            swarm.floodsub.publish(floodsub_topic.clone(), "Hi.".as_bytes());
+                            println!("Unknown command: {}", line);
                         }
+                        
                     }
+                    print!("\x1B[2J\x1B[1;1H");
                     //last_msg = line;
                 },
                 Poll::Ready(None) => panic!("Stdin closed"),

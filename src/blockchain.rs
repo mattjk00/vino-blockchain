@@ -8,6 +8,7 @@ extern crate ed25519_dalek;
 use rand::rngs::OsRng;
 use ed25519_dalek::{Keypair, Signer, Signature, PublicKey, Verifier};
 const REWARD:f32 = 5.0;
+const PROOF_C:usize = 2; // number of leading zero's required on hash
 
 /// Represents the blockchain structure
 #[derive(Serialize, Deserialize, Debug)]
@@ -77,7 +78,7 @@ impl Blockchain {
     /// A block's hash and all its transactions must be valid to return true
     fn validate(&self, old_block:&Block, new_block:&Block) -> bool {
         // some checks on the block itself
-        let block_okay = old_block.index + 1 == new_block.index && old_block.hash == new_block.prevhash && Blockchain::calc_hash(&new_block) == new_block.hash && new_block.hash[0] == 0 && new_block.hash[1] == 0;
+        let block_okay = old_block.index + 1 == new_block.index && old_block.hash == new_block.prevhash && Blockchain::calc_hash(&new_block) == new_block.hash && Blockchain::has_proof_of_work(new_block.hash);
         let mut transactions_okay = true;
         
         // check each transaction in the block
@@ -153,6 +154,17 @@ impl Blockchain {
             true => Some(self.chain[0].hash),
             false => None
         }
+    }
+
+    /// Determines if a given hash has sufficient proof of work in the hash.
+    pub fn has_proof_of_work(hash:[u8; 32]) -> bool {
+        let mut proof = true;
+        for i in 0..PROOF_C {
+            if hash[i] != 0 {
+                proof = false;
+            }
+        }
+        proof
     }
 }
 

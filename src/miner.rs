@@ -21,7 +21,7 @@ impl Miner {
         self.target.nonce = nonce;
         
         let gen_hash = Blockchain::calc_hash(&self.target);
-        if gen_hash[0] == 0 && gen_hash[1] == 0 {
+        if Blockchain::has_proof_of_work(gen_hash) {
             self.done = true;
             self.target.hash = gen_hash;
         }

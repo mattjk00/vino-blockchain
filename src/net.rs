@@ -3,7 +3,7 @@ pub const TRANSACTION:  u8 = 1;
 pub const BLOCKCHAIN:   u8 = 2;
 pub const RECEIPT:      u8 = 3;
 
-use crate::blockchain::{Blockchain, Block};
+use crate::blockchain::{Blockchain, Block, Transaction};
 use serde::{Serialize, Deserialize};
 
 use bincode;
@@ -30,6 +30,12 @@ impl VinoMessage {
         VinoMessage { header:header, bytes:bytes }
     }
 
+    pub fn new_transaction_message(b:&Transaction) -> VinoMessage {
+        let bytes: Vec<u8> = bincode::serialize(&b).unwrap();
+        let header = TRANSACTION;
+        VinoMessage { header:header, bytes:bytes }
+    }
+
     pub fn read_block(&self) -> Block {
         let block:Block = bincode::deserialize(&self.bytes).unwrap();
         block
@@ -38,6 +44,11 @@ impl VinoMessage {
     pub fn read_blockchain(&self) -> Blockchain {
         let bc:Blockchain = bincode::deserialize(&self.bytes).unwrap();
         bc
+    }
+
+    pub fn read_transaction(&self) -> Transaction {
+        let t:Transaction = bincode::deserialize(&self.bytes).unwrap();
+        t
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {

@@ -1,5 +1,5 @@
 mod blockchain;
-use blockchain::{Blockchain, Block, Transaction, s32, s64};
+use blockchain::{Blockchain, Block, Transaction, s32, s64, s32_format, b32};
 use net::VinoMessage;
 mod miner;
 mod net;
@@ -23,6 +23,7 @@ use std::{error::Error, task::{Context, Poll}};
 fn main() -> Result<(), Box<dyn Error>> {
     println!("--- VINO COIN ---");
 
+
     //env_logger::init();
     // Create a random PeerId
     let local_key = identity::Keypair::generate_ed25519();
@@ -43,6 +44,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     struct MyBehaviour {
         floodsub: Floodsub,
         mdns: Mdns,
+        #[behaviour(ignore)]
+        blockchain:Blockchain,
 
         // Struct fields which do not implement NetworkBehaviour need to be ignored
         #[behaviour(ignore)]
@@ -57,9 +60,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let vmsg = VinoMessage::from_bytes(&message.data);
                 match vmsg {
                     Ok(m) => {
-                        let block = m.read_block();
-
-                        println!("Received Block: '{:?}' from {:?}", s32(block.hash), message.source);
+                        if m.header == net::NEW_BLOCK {
+                            let block = m.read_block();
+                            let valid = self.blockchain.push(block);
+                            println!("New Block | Valid: {} | '{:?}' from {:?}", valid, s32(self.blockchain.last_hash().unwrap()), message.source);
+                        }
+                        if m.header == net::BLOCKCHAIN {
+                            let bc = m.read_blockchain();
+                            let replaced = self.blockchain.replace_chain(bc.chain);
+                            println!("Replaced? {}", replaced);
+                        }
                     },
                     Err(_e) => { println!("ignored. "); }
                 };
@@ -93,7 +103,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             floodsub: Floodsub::new(local_peer_id.clone()),
             mdns,
             ignored_member: false,
+            blockchain:Blockchain::new()
         };
+
+        let genesis = Block::new(0, [0; 32]);
+        behaviour.blockchain.push(genesis);
 
         behaviour.floodsub.subscribe(floodsub_topic.clone());
         Swarm::new(transport, behaviour, local_peer_id)
@@ -114,19 +128,72 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Kick it off
     let mut listening = false;
+    let mut cmd_mode:String = String::new();
+    let mut cmd_params:Vec<String> = Vec::new();
+    let key = blockchain::gen_key();
+
     task::block_on(future::poll_fn(move |cx: &mut Context<'_>| {
         
-        let genesis = Block::new(0, [0; 32]);
-        let msg = VinoMessage::new_block_message(&genesis);
+        
 
         loop {
             match stdin.try_poll_next_unpin(cx)? {
                 Poll::Ready(Some(line)) => { 
-                    if line == "gen" {
+                    /*if line == "gen" {
+                        let genesis = Block::new(0, [0; 32]);
+                        let msg = VinoMessage::new_block_message(&genesis);
                         swarm.floodsub.publish(floodsub_topic.clone(), &msg.to_bytes()[..])
-                    } else {
-                        swarm.floodsub.publish(floodsub_topic.clone(), "Hi.".as_bytes())
+                    }*/
+
+                    if cmd_mode == "t" {
+                        cmd_params.push(line);
+                        if cmd_params.len() == 1 {
+                            println!("Enter amount:");
+                        } else if cmd_params.len() == 2 {
+                            println!("Attempting...");
+                        }
                     }
+                    else {
+                        if line == "bc" {
+                            let a = &swarm.blockchain;
+                            let msg = VinoMessage::new_blockchain_message(a);
+                            swarm.floodsub.publish(floodsub_topic.clone(), &msg.to_bytes()[..])
+                        } 
+                        else if line == "t" {
+                            cmd_mode = "t".to_string();
+                            cmd_params.clear();
+                            println!("Enter recipient:");
+                        }
+                        else if line == "keys" {
+                            let out = s32_format(key.public.to_bytes(), "-".to_string());
+                            println!("Public: {}", out);
+                        }
+                        else if line == "mine" {
+                            let mut mineblock = Block::new(swarm.blockchain.chain.len() as u32, swarm.blockchain.last_hash().unwrap());
+                            let mut miner = miner::Miner::new(mineblock);
+                            println!("Mining...");
+                            while miner.is_done() == false {
+                                miner.mine();
+                            }
+                            println!("Done.");
+                            
+                            let msg = VinoMessage::new_block_message(&miner.target);
+                            let mut block = miner.target;
+                            let mut reward = Transaction::new_reward(swarm.blockchain.genesis_hash().unwrap(), block.hash, key.public.to_bytes());
+                            reward.sign(&key);
+                            block.add_transaction(reward);
+                            swarm.blockchain.push(block);
+                            swarm.floodsub.publish(floodsub_topic.clone(), &msg.to_bytes()[..])
+                        }
+                        else if line == "bal" {
+                            let balance = swarm.blockchain.determine_value(key.public.to_bytes());
+                            println!("Balance: {}", balance);
+                        }
+                        else {
+                            swarm.floodsub.publish(floodsub_topic.clone(), "Hi.".as_bytes())
+                        }
+                    }
+                    //last_msg = line;
                 },
                 Poll::Ready(None) => panic!("Stdin closed"),
                 Poll::Pending => break

@@ -10,6 +10,7 @@ use ed25519_dalek::{Keypair, Signer, Signature, PublicKey, Verifier};
 const REWARD:u32 = 5;
 
 /// Represents the blockchain structure
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Blockchain {
     pub chain:Vec<Block>
 }
@@ -45,10 +46,12 @@ impl Blockchain {
     }
 
     /// Checks if given chain is of greater size. Replace current chain with given.
-    pub fn replace_chain(&mut self, ch:Vec<Block>) {
+    pub fn replace_chain(&mut self, ch:Vec<Block>) -> bool {
         if ch.len() > self.chain.len() {
             self.chain = ch;
+            return true;
         }
+        false
     }
 
     /// Gives a rough print of the blockchain
@@ -162,6 +165,14 @@ pub fn s32(a:[u8; 32]) -> String {
     s
 }
 
+pub fn s32_format(a:[u8; 32], delimiter:String) -> String {
+    let mut s = String::new();
+    for x in a.iter() {
+        s = s + &format!("{}{}", x, delimiter);
+    }
+    s
+}
+
 /// Converts a length 64 byte array to a string representation
 pub fn s64(a:[u8; 64]) -> String {
     let mut s = String::new();
@@ -169,6 +180,23 @@ pub fn s64(a:[u8; 64]) -> String {
         s = s + &format!("{}", x);
     }
     s
+}
+
+/// Converts a dash delimited string representation of a byte array and parses it back into a byte array
+pub fn b32(a:&String) -> [u8; 32] {
+    let mut arr = [0; 32];
+    let mut split = a.split("-").collect::<Vec<_>>();
+    for i in 0..32 {
+        let sb = split[i].as_bytes();
+        let mut sum:u8 = 0;
+        for j in (0..sb.len()).rev() {
+            let scale = (10u8.pow((sb.len() - j - 1) as u32));
+            let value:u8 = (sb[j] - 48) * scale;
+            sum += value;
+        }
+        arr[i] = sum;
+    }
+    arr
 }
 
 /// Structure representing the data of each of Block on the chain

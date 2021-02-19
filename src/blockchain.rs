@@ -70,21 +70,29 @@ impl Blockchain {
 
     /// Runs some validation checks given an old block and new block.
     /// Returns true if new block is valid.
+    /// A block's hash and all its transactions must be valid to return true
     fn validate(&self, old_block:&Block, new_block:&Block) -> bool {
+        // some checks on the block itself
         let block_okay = old_block.index + 1 == new_block.index && old_block.hash == new_block.prevhash && Blockchain::calc_hash(&new_block) == new_block.hash && new_block.hash[0] == 0 && new_block.hash[1] == 0;
         let mut transactions_okay = true;
         
+        // check each transaction in the block
         for t in new_block.transactions.iter() {
+            // parse the public key out from the block
             let public_key = PublicKey::from_bytes(&t.public_key);
             match public_key {
+                // check the key is okay
                 Ok(pk) => { 
+                    // validate the transaction with this key
                     let t_result = self.validate_transaction(&t,pk);
+                    // if any transaction is bad, stop checking
                     if t_result == false {
                         transactions_okay = false;
                         break;
                     }
                 },
-                Err(e) => {
+                // Handle malfunction
+                Err(_e) => {
                     println!("BAD: {}", s32(t.public_key));
                 }
             }    
@@ -92,20 +100,28 @@ impl Blockchain {
         block_okay && transactions_okay
     }
 
+    /// Validates a single given transaction with given public key
+    /// Checks for valid signature and if coins are sendable
     fn validate_transaction(&self, t:&Transaction, pkey:PublicKey) -> bool {
         let csig = Signature::new(t.signature);
+        // verify signature
         let sig_result = pkey.verify(t.form_record().as_bytes(), &csig).is_ok();
+        // determine probable value of sender's coins --- the will be ignored if coins are being sent by the genesis block
         let sender_value = self.determine_value(t.input);
-        sig_result && (sender_value >= t.value || t.input == self.genesis_hash())
+        sig_result && (sender_value >= t.value || t.input == self.genesis_hash().unwrap())
     }
 
+    /// Function to try and determine the value in coins of a single address
     pub fn determine_value(&self, address:[u8; 32]) -> u32 {
         let mut sum:u32 = 0;
         for b in self.chain.iter() {
             for t in b.transactions.iter() {
+                // checking for when the address is a recipient
                 if t.output == address {
                     sum += t.value;
                 }
+                // checking for when the address is a sender
+                // value will not go negative because that can not exist on the blockchain.
                 if t.input == address {
                     if sum >= t.value {
                         sum -= t.value;
@@ -119,6 +135,7 @@ impl Blockchain {
         sum
     }
 
+    /// Tries to get the hash from the last block on the chain
     pub fn last_hash(&self) -> Option<[u8; 32]> {
         match self.chain.len() > 0 {
             true => Some(self.chain[self.chain.len() - 1].hash),
@@ -126,10 +143,11 @@ impl Blockchain {
         }
     }
 
-    pub fn genesis_hash(&self) -> [u8; 32] {
+    /// Tries to get the genesis hash from the blockchain.
+    pub fn genesis_hash(&self) -> Option<[u8; 32]> {
         match self.chain.len() > 0 {
-            true => self.chain[0].hash,
-            false => [0; 32]
+            true => Some(self.chain[0].hash),
+            false => None
         }
     }
 }
@@ -143,7 +161,7 @@ pub fn s32(a:[u8; 32]) -> String {
     s
 }
 
-/// Converts a length 32 byte array to a string representation
+/// Converts a length 64 byte array to a string representation
 pub fn s64(a:[u8; 64]) -> String {
     let mut s = String::new();
     for x in a.iter() {
@@ -154,10 +172,10 @@ pub fn s64(a:[u8; 64]) -> String {
 
 /// Structure representing the data of each of Block on the chain
 pub struct Block {
-    index:          u32,
-    pub timestamp:  String,
-    pub hash:       [u8; 32],
-    prevhash:       [u8; 32],
+    index:              u32,
+    pub timestamp:      String,
+    pub hash:           [u8; 32],
+    prevhash:           [u8; 32],
     pub nonce:          u32,
     pub transactions:   Vec<Transaction>
 }
@@ -170,8 +188,6 @@ impl Block {
         let mut nb = Block {
             index:i,
             timestamp:time,
-            //prevhash:prhash.to_string(),
-            //hash:String::new(),
             nonce: 0,
             transactions:Vec::new(),
             hash:[0;32],
@@ -182,14 +198,10 @@ impl Block {
         nb
     }
 
+    /// Adds a transaction. Does not validate it.
     pub fn add_transaction(&mut self, t:Transaction) {
         self.transactions.push(t);
     }
-
-    /*fn validate_nth_transaction(self, i:usize, pkey:PublicKey) -> bool {
-        let t = &self.transactions[i];
-        self.validate_transaction(t, pkey)
-    }*/
 }
 
 /// Implement a to_string method for block. Used for printing info.
@@ -199,6 +211,7 @@ impl fmt::Display for Block {
     }
 }
 
+/// Represents a transaction on the blockchain.
 pub struct Transaction {
     pub signature:  [u8; 64],
     blockhash:      [u8; 32],
@@ -210,14 +223,17 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    /// Create an unsigned transaction with input, output, value, and fee attached
     pub fn new(inp:[u8; 32], out:[u8; 32], val:u32, fee:u32) -> Transaction {
         Transaction { signature:[0; 64], blockhash:[0; 32], input:inp, output:out, value:val, fee: fee, public_key:inp }
     }
 
+    /// Creates a reward transaction. Used to reward miners on the blockchain. The input will be from the genesis hash.
     pub fn new_reward(genesis_hash:[u8; 32], blockhash:[u8; 32], dest:[u8; 32]) -> Transaction {
         Transaction { signature:[0; 64], blockhash:blockhash, input:genesis_hash, output:dest, value:REWARD, fee:0, public_key:dest }
     }
 
+    /// Signs the transaction with given keys
     pub fn sign(&mut self, kp:&Keypair) {
         let record_str = self.form_record();
         let record = record_str.as_bytes();
@@ -225,6 +241,7 @@ impl Transaction {
         self.signature = sig.to_bytes();
     }
 
+    /// Returns the string record format of the transaction. What gets crypto'd
     fn form_record(&self) -> String {
         format!("{}{}{}{}", s32(self.input), s32(self.output), self.value, self.fee)
     }
@@ -237,6 +254,7 @@ impl fmt::Display for Transaction {
     }
 }
 
+/// Utility function for generating pub/secret keys
 pub fn gen_key() -> Keypair {
     let mut csprng = OsRng{};
     let keypair: Keypair = Keypair::generate(&mut csprng);

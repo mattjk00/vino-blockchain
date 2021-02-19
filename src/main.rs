@@ -151,7 +151,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             println!("Enter amount:");
                         } else if cmd_params.len() == 2 {
                             println!("Attempting...");
-                            cmd_mode = "";
+                            cmd_mode = "".to_string();
                         }
                     }
                     else {
@@ -179,11 +179,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
                             println!("Done.");
                             
-                            let msg = VinoMessage::new_block_message(&miner.target);
+                            
                             let mut block = miner.target;
                             let mut reward = Transaction::new_reward(swarm.blockchain.genesis_hash().unwrap(), block.hash, key.public.to_bytes());
                             reward.sign(&key);
                             block.add_transaction(reward);
+                            
+                            let msg = VinoMessage::new_block_message(&block);
                             swarm.blockchain.push(block);
                             swarm.floodsub.publish(floodsub_topic.clone(), &msg.to_bytes()[..])
                         }

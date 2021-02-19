@@ -177,6 +177,15 @@ pub fn s32(a:[u8; 32]) -> String {
     s
 }
 
+pub fn small32(a:[u8; 32]) -> String {
+    let mut s = String::new();
+    for i in 0..4 {
+        s = s + &format!("{}", a[i]);
+    }
+    s += "...";
+    s
+}
+
 pub fn s32_format(a:[u8; 32], delimiter:String) -> String {
     let mut s = String::new();
     for x in a.iter() {
@@ -249,9 +258,14 @@ impl Block {
 /// Implement a to_string method for block. Used for printing info.
 impl fmt::Display for Block {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[index:{}, timestamp:{}, hash:{}, prevhash:{}]", self.index, self.timestamp, s32(self.hash), s32(self.prevhash))
+        write!(f, "[\n\tindex:{}\n\ttimestamp:{}\n\thash:{}\n\tprevhash:{}\n\tTs:\n", self.index, self.timestamp, small32(self.hash), small32(self.prevhash));
+        for t in self.transactions.iter() {
+            write!(f, "\t{}", t);
+        }
+        write!(f, "]")
     }
 }
+
 
 /// Represents a transaction on the blockchain.
 #[derive(Serialize, Deserialize, Debug)]
@@ -261,7 +275,7 @@ pub struct Transaction {
     blockhash:      [u8; 32],
     input:          [u8; 32],
     output:         [u8; 32],
-    value:          f32,
+    pub value:          f32,
     fee:            f32,
     public_key:     [u8; 32]
 }
@@ -308,7 +322,7 @@ impl Transaction {
 /// Implement a to_string method for block. Used for printing info.
 impl fmt::Display for Transaction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[\tfrom:{}\n\tto:{}\n\tblockhash:{}\n\tsignature:{}{}\n]", s32(self.input), s32(self.output), s32(self.blockhash), s32(self.signature_first), s32(self.signature_second))
+        write!(f, "[\tfrom:{}\n\tto:{}\n\tblockhash:{}\n\tsignature:{}{}\n]", small32(self.input), small32(self.output), small32(self.blockhash), small32(self.signature_first), small32(self.signature_second))
     }
 }
 

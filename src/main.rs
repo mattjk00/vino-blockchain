@@ -46,6 +46,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         mdns: Mdns,
         #[behaviour(ignore)]
         blockchain:Blockchain,
+        #[behaviour(ignore)]
+        received_transactions:Vec<Transaction>,
 
         // Struct fields which do not implement NetworkBehaviour need to be ignored
         #[behaviour(ignore)]
@@ -69,6 +71,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                             let bc = m.read_blockchain();
                             let replaced = self.blockchain.replace_chain(bc.chain);
                             println!("Replaced? {}", replaced);
+                        }
+                        if m.header == net::TRANSACTION {
+                            let transaction = m.read_transaction();
+                            println!("TRANSACTION: {}", transaction.value);
+                            self.received_transactions.push(transaction);
                         }
                     },
                     Err(_e) => { println!("ignored. "); }
@@ -103,7 +110,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             floodsub: Floodsub::new(local_peer_id.clone()),
             mdns,
             ignored_member: false,
-            blockchain:Blockchain::new()
+            blockchain:Blockchain::new(),
+            received_transactions:Vec::new()
         };
 
         let genesis = Block::new(0, [0; 32]);
@@ -150,8 +158,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                         if cmd_params.len() == 1 {
                             println!("Enter amount:");
                         } else if cmd_params.len() == 2 {
-                            println!("Attempting...");
+                            println!("Sending...");
                             cmd_mode = "".to_string();
+
+                            let recip = b32(&cmd_params[0]);
+                            let val:f32 = cmd_params[1].parse().unwrap();
+                            let mut ts = Transaction::new(key.public.to_bytes(), recip, val, 0.0);
+                            ts.sign(&key);
+                            let tmsg = VinoMessage::new_transaction_message(&ts);
+                            swarm.received_transactions.push(ts);
+                            swarm.floodsub.publish(floodsub_topic.clone(), &tmsg.to_bytes()[..]);
                         }
                     }
                     else {
@@ -184,6 +200,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                             let mut reward = Transaction::new_reward(swarm.blockchain.genesis_hash().unwrap(), block.hash, key.public.to_bytes());
                             reward.sign(&key);
                             block.add_transaction(reward);
+
+                            while swarm.received_transactions.len() > 0 {
+                                println!("{}", swarm.received_transactions.last().unwrap().value);
+                                block.add_transaction(swarm.received_transactions.pop().unwrap());
+                                println!("Ts: {}", block.transactions.len());
+                            }
                             
                             let msg = VinoMessage::new_block_message(&block);
                             swarm.blockchain.push(block);
@@ -192,6 +214,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                         else if line == "bal" {
                             let balance = swarm.blockchain.determine_value(key.public.to_bytes());
                             println!("Balance: {}", balance);
+                        }
+                        else if line == "see" {
+                            swarm.blockchain.print_all();
                         }
                         else {
                             swarm.floodsub.publish(floodsub_topic.clone(), "Hi.".as_bytes());

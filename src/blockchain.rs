@@ -57,6 +57,7 @@ impl Blockchain {
 
     /// Gives a rough print of the blockchain
     pub fn print_all(&self) {
+        println!("Blockchain - Blocks:{}", self.chain.len());
         for b in self.chain.iter() {
             println!("{}, ", b.to_string());
         }
@@ -102,6 +103,12 @@ impl Blockchain {
                 }
             }    
         }
+
+        #[cfg(debug_assertions)]
+        {
+            println!("Block okay? {}, {} Transactions okay? {}", block_okay, new_block.transactions.len(), transactions_okay);
+        }
+
         block_okay && transactions_okay
     }
 
@@ -113,11 +120,18 @@ impl Blockchain {
         let sig_result = pkey.verify(t.form_record().as_bytes(), &csig).is_ok();
         // determine probable value of sender's coins --- the will be ignored if coins are being sent by the genesis block
         let sender_value = self.determine_value(t.input);
-        sig_result && (sender_value >= t.value || t.input == self.genesis_hash().unwrap()) && !self.transaction_exists(t.signature())
+        let t_exists = self.transaction_exists(t.signature());
+        //println!("sig_result:{}, value_okay:{}, t_exists:{}", sig_result, (sender_value >= t.value || t.input == self.genesis_hash().unwrap()), t_exists);
+        sig_result && (sender_value >= t.value || t.input == self.genesis_hash().unwrap()) && !t_exists
     }
 
     /// Function to try and determine the value in coins of a single address
     pub fn determine_value(&self, address:[u8; 32]) -> f32 {
+
+        if address == self.genesis_hash().unwrap() {
+            return f32::MAX;
+        }
+
         let mut sum:f32 = 0.0;
         for b in self.chain.iter() {
             for t in b.transactions.iter() {
@@ -264,6 +278,16 @@ impl Block {
     pub fn add_transaction(&mut self, t:Transaction) {
         self.transactions.push(t);
     }
+
+    /// Checks if this block has a given signature
+    pub fn has_transaction(&self, t:&Transaction) -> bool {
+        for ts in self.transactions.iter() {
+            if ts.signature() == t.signature() {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 /// Implement a to_string method for block. Used for printing info.
@@ -288,18 +312,21 @@ pub struct Transaction {
     output:         [u8; 32],
     pub value:          f32,
     fee:            f32,
-    public_key:     [u8; 32]
+    public_key:     [u8; 32],
+    timestamp: String
 }
 
 impl Transaction {
     /// Create an unsigned transaction with input, output, value, and fee attached
     pub fn new(inp:[u8; 32], out:[u8; 32], val:f32, fee:f32) -> Transaction {
-        Transaction { signature_first:[0; 32], signature_second:[0; 32], blockhash:[0; 32], input:inp, output:out, value:val, fee: fee, public_key:inp }
+        let time = Utc::now().timestamp().to_string();
+        Transaction { signature_first:[0; 32], signature_second:[0; 32], blockhash:[0; 32], input:inp, output:out, value:val, fee: fee, public_key:inp, timestamp:time }
     }
 
     /// Creates a reward transaction. Used to reward miners on the blockchain. The input will be from the genesis hash.
     pub fn new_reward(genesis_hash:[u8; 32], blockhash:[u8; 32], dest:[u8; 32]) -> Transaction {
-        Transaction { signature_first:[0; 32], signature_second:[0; 32], blockhash:blockhash, input:genesis_hash, output:dest, value:REWARD, fee:0.0, public_key:dest }
+        let time = Utc::now().timestamp().to_string();
+        Transaction { signature_first:[0; 32], signature_second:[0; 32], blockhash:blockhash, input:genesis_hash, output:dest, value:REWARD, fee:0.0, public_key:dest, timestamp:time }
     }
 
     /// Signs the transaction with given keys
@@ -311,11 +338,13 @@ impl Transaction {
         let sigb = sig.to_bytes();
         self.signature_first = get_arr(&sigb[..32]);
         self.signature_second = get_arr(&sigb[32..]);
+        // NEW
+        //self.public_key = kp.public.to_bytes();
     }
 
     /// Returns the string record format of the transaction. What gets crypto'd
     fn form_record(&self) -> String {
-        format!("{}{}{}{}", s32(self.input), s32(self.output), self.value, self.fee)
+        format!("{}{}{}{}{}", s32(self.input), s32(self.output), self.value, self.fee, self.timestamp)
     }
 
     fn signature(&self) -> [u8; 64] {

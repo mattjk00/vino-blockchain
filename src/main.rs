@@ -64,8 +64,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Ok(m) => {
                         if m.header == net::NEW_BLOCK {
                             let block = m.read_block();
+
+                            /*for i in 0..self.received_transactions.len() {
+                                if block.has_transaction(&self.received_transactions[i]) {
+                                    self.received_transactions.remove(i);
+                                }
+                            }*/
+
                             let valid = self.blockchain.push(block);
                             println!("New Block | Valid: {} | '{:?}' from {:?}", valid, s32(self.blockchain.last_hash().unwrap()), message.source);
+
+                            
                         }
                         if m.header == net::BLOCKCHAIN {
                             let bc = m.read_blockchain();

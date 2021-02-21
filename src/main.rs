@@ -16,12 +16,15 @@ use libp2p::{
     mdns::{Mdns, MdnsEvent},
     swarm::NetworkBehaviourEventProcess
 };
-use std::{error::Error, task::{Context, Poll}};
+use std::{thread, error::Error, task::{Context, Poll}, fs::File, io::prelude::*, io::BufReader};
+use bincode;
 //use libp2p::futures::StreamExt;
 
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("--- VINO COIN ---");
+
+    
 
 
     //env_logger::init();
@@ -84,7 +87,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                         if m.header == net::TRANSACTION {
                             let transaction = m.read_transaction();
                             println!("TRANSACTION: {}", transaction.value);
-                            self.received_transactions.push(transaction);
+                            let valid = self.blockchain.validate_transaction(&transaction, &ed25519_dalek::PublicKey::from_bytes(&transaction.public_key).unwrap());
+                            if valid {
+                                self.received_transactions.push(transaction);
+                            }
                         }
                     },
                     Err(_e) => { println!("ignored. "); }
@@ -149,10 +155,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut cmd_params:Vec<String> = Vec::new();
     let key = blockchain::gen_key();
 
-    task::block_on(future::poll_fn(move |cx: &mut Context<'_>| {
-        
-        
+    //let mut minerrr = miner::Miner::new(Block::new(0, [0;32]));
+    let mut is_mining = false;
+    
 
+    task::block_on(future::poll_fn(move |cx: &mut Context<'_>| {
         loop {
             match stdin.try_poll_next_unpin(cx)? {
                 Poll::Ready(Some(line)) => { 
@@ -196,6 +203,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                             println!("Public: {}", out);
                         }
                         else if line == "mine" {
+
+                            
                             let mut mineblock = Block::new(swarm.blockchain.chain.len() as u32, swarm.blockchain.last_hash().unwrap());
                             let mut miner = miner::Miner::new(mineblock);
                             println!("Mining...");
@@ -227,13 +236,25 @@ fn main() -> Result<(), Box<dyn Error>> {
                         else if line == "see" {
                             swarm.blockchain.print_all();
                         }
+                        else if line == "save" {
+                            println!("Saving...");
+                            save_bc_to_file(&swarm.blockchain);
+                        }
+                        else if line == "load" {
+                            println!("Loading...");
+                            match read_bc_from_file("bc.vn".to_string()) {
+                                Ok(bc) => swarm.blockchain = bc,
+                                Err(e) => {}
+                            };
+                        }
                         else {
                             swarm.floodsub.publish(floodsub_topic.clone(), "Hi.".as_bytes());
                             println!("Unknown command: {}", line);
                         }
                         
                     }
-                    print!("\x1B[2J\x1B[1;1H");
+                    print!("{}[2J", 27 as char);
+                    //print!("\x1B[2J\x1B[1;1H");
                     //last_msg = line;
                 },
                 Poll::Ready(None) => panic!("Stdin closed"),
@@ -258,6 +279,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Poll::Pending
     }))
 
+    
     /*let mut blockchain: Blockchain = Blockchain::new();
     let genesis = Block::new(0, [0; 32]);
     let mut block2 = Block::new(1, genesis.hash);
@@ -316,3 +338,21 @@ fn main() -> Result<(), Box<dyn Error>> {
 use std::convert::TryInto;
 
 
+fn save_bc_to_file(b:&Blockchain) -> std::io::Result<()> {
+    let mut file = File::create("bc.vn")?;
+    file.write_all(&bincode::serialize(&b).unwrap())?;
+    Ok(())
+}
+
+fn read_bc_from_file(path:String) -> std::io::Result<Blockchain> {
+    let file = File::open(path)?;
+    let mut buf_reader = BufReader::new(file);
+    let bc = bincode::deserialize(buf_reader.buffer()).unwrap();
+    Ok(bc)
+}
+
+/*fn save_keys_to_file(k:&ring::signature::Ed25519KeyPair, path:String) -> std::io::Result<()> {
+    let mut file = File::open(path)?;
+    file.write_all(&bincode::serialize(&k).unwrap())?;
+    Ok(())
+}*/

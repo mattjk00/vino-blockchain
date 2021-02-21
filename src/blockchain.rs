@@ -90,7 +90,7 @@ impl Blockchain {
                 // check the key is okay
                 Ok(pk) => { 
                     // validate the transaction with this key
-                    let t_result = self.validate_transaction(&t,pk);
+                    let t_result = self.validate_transaction(&t,&pk);
                     // if any transaction is bad, stop checking
                     if t_result == false {
                         transactions_okay = false;
@@ -114,7 +114,7 @@ impl Blockchain {
 
     /// Validates a single given transaction with given public key
     /// Checks for valid signature and if coins are sendable
-    fn validate_transaction(&self, t:&Transaction, pkey:PublicKey) -> bool {
+    pub fn validate_transaction(&self, t:&Transaction, pkey:&PublicKey) -> bool {
         let csig = Signature::new(t.signature());
         // verify signature
         let sig_result = pkey.verify(t.form_record().as_bytes(), &csig).is_ok();
@@ -312,7 +312,7 @@ pub struct Transaction {
     output:         [u8; 32],
     pub value:          f32,
     fee:            f32,
-    public_key:     [u8; 32],
+    pub public_key:     [u8; 32],
     timestamp: String
 }
 

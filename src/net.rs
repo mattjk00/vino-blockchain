@@ -5,12 +5,27 @@ pub const RECEIPT:      u8 = 3;
 
 use crate::blockchain::{Blockchain, Block, Transaction};
 use serde::{Serialize, Deserialize};
+use ed25519_dalek::Keypair;
 
 use bincode;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct VinoMessage {
     pub header: u8,
     pub bytes: Vec<u8>
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct KeyFile {
+    pub public_bytes: [u8; 32],
+    pub secret_bytes: [u8; 32]
+}
+impl KeyFile {
+    pub fn from_keypair(kp:&Keypair) -> KeyFile {
+        KeyFile {
+            public_bytes:kp.public.to_bytes(),
+            secret_bytes:kp.secret.to_bytes()
+        }
+    }
 }
 
 impl VinoMessage {

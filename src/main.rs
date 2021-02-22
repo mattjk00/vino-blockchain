@@ -16,8 +16,10 @@ use libp2p::{
     mdns::{Mdns, MdnsEvent},
     swarm::NetworkBehaviourEventProcess
 };
-use std::{thread, error::Error, task::{Context, Poll}, fs::File, io::prelude::*, io::BufReader};
+use std::{thread, error::Error, task::{Context, Poll}, fs::File, io::prelude::*, io::{BufReader, ErrorKind}};
 use bincode;
+use serde_json;
+use ed25519_dalek::{Keypair, Signer, Signature, PublicKey, SecretKey, Verifier};
 //use libp2p::futures::StreamExt;
 
 
@@ -153,7 +155,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut listening = false;
     let mut cmd_mode:String = String::new();
     let mut cmd_params:Vec<String> = Vec::new();
-    let key = blockchain::gen_key();
+    let mut key = blockchain::gen_key();
 
     //let mut minerrr = miner::Miner::new(Block::new(0, [0;32]));
     let mut is_mining = false;
@@ -243,9 +245,39 @@ fn main() -> Result<(), Box<dyn Error>> {
                         else if line == "load" {
                             println!("Loading...");
                             match read_bc_from_file("bc.vn".to_string()) {
-                                Ok(bc) => swarm.blockchain = bc,
+                                Ok(bc) => {
+                                    swarm.blockchain = bc;
+                                    println!("Loaded {} block!", swarm.blockchain.chain.len());
+                                },
                                 Err(e) => {}
                             };
+                        }
+                        else if line.contains("save_keys") {
+                            let cmds = match line.contains(" ") {
+                                true => line.split(' ').collect::<Vec<&str>>(),
+                                false => vec!["", "keys.vn"]
+                            };
+                            let path = cmds[1];
+                            println!("Saving Keys...");
+                            match save_keys_to_file(&net::KeyFile::from_keypair(&key), path.to_string()) {
+                                Ok(()) => { println!("Saved!"); },
+                                Err(e) => { println!("Error! Could not save -- {}", e); }
+                            }
+                        }
+                        else if line.contains("load_keys") {
+                            let cmds = match line.contains(" ") {
+                                true => line.split(' ').collect::<Vec<&str>>(),
+                                false => vec!["", "keys.vn"]
+                            };
+                            let path = cmds[1];
+                            println!("Loading Keys...");
+                            match read_keys_from_file(path.to_string()) {
+                                Ok(ks) => {
+                                    key = ks;
+                                    println!("Loaded Keys.");
+                                },
+                                Err(e) => {}
+                            }
                         }
                         else {
                             swarm.floodsub.publish(floodsub_topic.clone(), "Hi.".as_bytes());
@@ -340,19 +372,46 @@ use std::convert::TryInto;
 
 fn save_bc_to_file(b:&Blockchain) -> std::io::Result<()> {
     let mut file = File::create("bc.vn")?;
-    file.write_all(&bincode::serialize(&b).unwrap())?;
+    file.write_all(&serde_json::to_string(&b)?.as_bytes());
     Ok(())
 }
 
 fn read_bc_from_file(path:String) -> std::io::Result<Blockchain> {
-    let file = File::open(path)?;
-    let mut buf_reader = BufReader::new(file);
-    let bc = bincode::deserialize(buf_reader.buffer()).unwrap();
+    let mut file = File::open(path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let bc = serde_json::from_str(&contents)?;
     Ok(bc)
 }
 
-/*fn save_keys_to_file(k:&ring::signature::Ed25519KeyPair, path:String) -> std::io::Result<()> {
-    let mut file = File::open(path)?;
-    file.write_all(&bincode::serialize(&k).unwrap())?;
+fn save_keys_to_file(k:&net::KeyFile, path:String) -> std::io::Result<()> {
+    let mut file = File::create(path)?;
+    file.write_all(&serde_json::to_string(&k)?.as_bytes())?;
     Ok(())
-}*/
+}
+
+fn read_keys_from_file(path:String) -> std::io::Result<Keypair> {
+    let mut file = File::open(path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let keyfile:net::KeyFile = serde_json::from_str(&contents)?;
+    let try_pbytes = PublicKey::from_bytes(&keyfile.public_bytes);
+
+    match try_pbytes  {
+        Ok(pk) => {
+            match SecretKey::from_bytes(&keyfile.secret_bytes) {
+                Ok(sk) => {
+                    Ok(Keypair {
+                        public:pk,
+                        secret:sk
+                    })
+                },
+                Err(e) => Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid Secret Key."))
+            }
+        },
+        Err(e) => Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid Public Key."))
+    }
+
+    
+    
+}

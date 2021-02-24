@@ -15,6 +15,12 @@ pub struct VinoMessage {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct JsonMessage<T> {
+    pub header: u8,
+    pub data: T
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct KeyFile {
     pub public_bytes: [u8; 32],
     pub secret_bytes: [u8; 32]
@@ -74,4 +80,10 @@ impl VinoMessage {
         let me:Result<VinoMessage, Box<bincode::ErrorKind>> = bincode::deserialize(&b);
         me
     }
+
+    pub fn to_json(&self) -> String {
+        let s: String = serde_json::to_string(&self).unwrap();
+        s
+    }
+
 }

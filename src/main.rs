@@ -3,6 +3,7 @@ use blockchain::{Blockchain, Block, Transaction, s32, s64, s32_format, b32};
 use net::VinoMessage;
 mod miner;
 mod net;
+use net::*;
 use ring::signature::KeyPair;
 use async_std::{io, task};
 use futures::{future, prelude::*};
@@ -16,13 +17,56 @@ use libp2p::{
     mdns::{Mdns, MdnsEvent},
     swarm::NetworkBehaviourEventProcess
 };
-use std::{thread, error::Error, task::{Context, Poll}, fs::File, io::prelude::*, io::{BufReader, ErrorKind}};
+use std::{thread, error::Error, task::{Context, Poll}, fs::File, io::prelude::*, io::{BufReader, ErrorKind}, sync::Mutex};
 use bincode;
 use serde_json;
 use ed25519_dalek::{Keypair, Signer, Signature, PublicKey, SecretKey, Verifier};
 //use libp2p::futures::StreamExt;
 
+use actix_web::{web, App, HttpRequest, HttpServer, Responder};
 
+struct AppState {
+    blockchain:Mutex<Blockchain>
+}
+
+
+async fn greet(req: HttpRequest) -> impl Responder {
+    let name = req.match_info().get("name").unwrap_or("World");
+    format!("Hello {}!", &name)
+}
+
+async fn get_public_key(req: HttpRequest) -> impl Responder {
+    format!("123-456-78-90")
+}
+
+async fn get_blockchain(data: web::Data<AppState>) -> String {
+    let mut bc = data.blockchain.lock().unwrap();
+
+    let b_msg = serde_json::to_string(&*bc).unwrap();
+
+    println!("{}", b_msg);
+    format!("{}", b_msg)
+}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+
+    let state = web::Data::new(AppState {
+        blockchain:Mutex::new(Blockchain::new())
+    });
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(state.clone())
+            .route("/pubkey", web::get().to(get_public_key))
+            .route("/blockchain", web::get().to(get_blockchain))
+    })
+    .bind(("127.0.0.1", 8080))?
+    .run()
+    .await
+}
+
+/*
 fn main() -> Result<(), Box<dyn Error>> {
     println!("--- VINO COIN ---");
 
@@ -295,7 +339,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         loop {
             match swarm.poll_next_unpin(cx) {
-                Poll::Ready(Some(event)) => println!("{:?}", event),
+                Poll::Ready(Some(event)) => println!("Event{:?}", event),
                 Poll::Ready(None) => return Poll::Ready(Ok(())),
                 Poll::Pending => {
                     if !listening {
@@ -366,7 +410,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //let dt = Utc::now().timestamp();// DateTime::<Utc>::from_utc(Utc::now(), Utc);
     //println!("{}", blockchain.chain[0].to_string());
 }
-
+*/
 use std::convert::TryInto;
 
 
